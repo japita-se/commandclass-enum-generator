@@ -1,6 +1,5 @@
 /* Z-Wave command classes */
 let CommandClass = Object.freeze({
-    Alarm: 0x71,
     Antitheft: 0x5d,
     ApplicationCapability: 0x57,
     ApplicationStatus: 0x22,
@@ -60,8 +59,6 @@ let CommandClass = Object.freeze({
     MultiChannel: 0x60,
     MultiChannelAssociation: 0x8e,
     MultiCmd: 0x8f,
-    MultiInstance: 0x60,
-    MultiInstanceAssociation: 0x8e,
     NetworkManagementBasic: 0x4d,
     NetworkManagementInclusion: 0x34,
     NetworkManagementInstallationMaintenance: 0x67,
@@ -130,7 +127,6 @@ let CommandClass = Object.freeze({
     ZipPortal: 0x61,
     ZwaveplusInfo: 0x5e,
     properties: {
-        0x71: {name: "Alarm"},
         0x5d: {name: "Antitheft"},
         0x57: {name: "ApplicationCapability"},
         0x22: {name: "ApplicationStatus"},
@@ -190,8 +186,6 @@ let CommandClass = Object.freeze({
         0x60: {name: "MultiChannel"},
         0x8e: {name: "MultiChannelAssociation"},
         0x8f: {name: "MultiCmd"},
-        0x60: {name: "MultiInstance"},
-        0x8e: {name: "MultiInstanceAssociation"},
         0x4d: {name: "NetworkManagementBasic"},
         0x34: {name: "NetworkManagementInclusion"},
         0x67: {name: "NetworkManagementInstallationMaintenance"},
@@ -264,26 +258,6 @@ let CommandClass = Object.freeze({
 exports.CommandClass = CommandClass;
 let isCommandClassValid = function(commandClass) {
     return (this.CommandClass.properties[commandClass] !== undefined);
-}
-
-/* Alarm commands (version 2) */
-let AlarmCommand = Object.freeze({
-    Get: 0x04,
-    Report: 0x05,
-    Set: 0x06,
-    TypeSupportedGet: 0x07,
-    TypeSupportedReport: 0x08,
-    properties: {
-        0x04: {name: "Get"},
-        0x05: {name: "Report"},
-        0x06: {name: "Set"},
-        0x07: {name: "TypeSupportedGet"},
-        0x08: {name: "TypeSupportedReport"},
-    }
-});
-exports.AlarmCommand = AlarmCommand;
-let isAlarmCommandValid = function(command) {
-    return (this.AlarmCommand.properties[command] !== undefined);
 }
 
 /* Antitheft commands (version 2) */
@@ -1276,16 +1250,6 @@ let isMailboxCommandValid = function(command) {
     return (this.MailboxCommand.properties[command] !== undefined);
 }
 
-/* ManufacturerProprietary commands (version 1) */
-let ManufacturerProprietaryCommand = Object.freeze({
-    properties: {
-    }
-});
-exports.ManufacturerProprietaryCommand = ManufacturerProprietaryCommand;
-let isManufacturerProprietaryCommandValid = function(command) {
-    return (this.ManufacturerProprietaryCommand.properties[command] !== undefined);
-}
-
 /* ManufacturerSpecific commands (version 2) */
 let ManufacturerSpecificCommand = Object.freeze({
     Get: 0x04,
@@ -1302,16 +1266,6 @@ let ManufacturerSpecificCommand = Object.freeze({
 exports.ManufacturerSpecificCommand = ManufacturerSpecificCommand;
 let isManufacturerSpecificCommandValid = function(command) {
     return (this.ManufacturerSpecificCommand.properties[command] !== undefined);
-}
-
-/* Mark commands (version 1) */
-let MarkCommand = Object.freeze({
-    properties: {
-    }
-});
-exports.MarkCommand = MarkCommand;
-let isMarkCommandValid = function(command) {
-    return (this.MarkCommand.properties[command] !== undefined);
 }
 
 /* Meter commands (version 4) */
@@ -1500,44 +1454,6 @@ let isMultiCmdCommandValid = function(command) {
     return (this.MultiCmdCommand.properties[command] !== undefined);
 }
 
-/* MultiInstance commands (version 1) */
-let MultiInstanceCommand = Object.freeze({
-    CmdEncap: 0x06,
-    Get: 0x04,
-    Report: 0x05,
-    properties: {
-        0x06: {name: "CmdEncap"},
-        0x04: {name: "Get"},
-        0x05: {name: "Report"},
-    }
-});
-exports.MultiInstanceCommand = MultiInstanceCommand;
-let isMultiInstanceCommandValid = function(command) {
-    return (this.MultiInstanceCommand.properties[command] !== undefined);
-}
-
-/* MultiInstanceAssociation commands (version 1) */
-let MultiInstanceAssociationCommand = Object.freeze({
-    Get: 0x02,
-    GroupingsGet: 0x05,
-    GroupingsReport: 0x06,
-    Remove: 0x04,
-    Report: 0x03,
-    Set: 0x01,
-    properties: {
-        0x02: {name: "Get"},
-        0x05: {name: "GroupingsGet"},
-        0x06: {name: "GroupingsReport"},
-        0x04: {name: "Remove"},
-        0x03: {name: "Report"},
-        0x01: {name: "Set"},
-    }
-});
-exports.MultiInstanceAssociationCommand = MultiInstanceAssociationCommand;
-let isMultiInstanceAssociationCommandValid = function(command) {
-    return (this.MultiInstanceAssociationCommand.properties[command] !== undefined);
-}
-
 /* NetworkManagementBasic commands (version 2) */
 let NetworkManagementBasicCommand = Object.freeze({
     LearnModeSet: 0x01,
@@ -1686,26 +1602,6 @@ let NodeNamingCommand = Object.freeze({
 exports.NodeNamingCommand = NodeNamingCommand;
 let isNodeNamingCommandValid = function(command) {
     return (this.NodeNamingCommand.properties[command] !== undefined);
-}
-
-/* NonInteroperable commands (version 1) */
-let NonInteroperableCommand = Object.freeze({
-    properties: {
-    }
-});
-exports.NonInteroperableCommand = NonInteroperableCommand;
-let isNonInteroperableCommandValid = function(command) {
-    return (this.NonInteroperableCommand.properties[command] !== undefined);
-}
-
-/* NoOperation commands (version 1) */
-let NoOperationCommand = Object.freeze({
-    properties: {
-    }
-});
-exports.NoOperationCommand = NoOperationCommand;
-let isNoOperationCommandValid = function(command) {
-    return (this.NoOperationCommand.properties[command] !== undefined);
 }
 
 /* Notification commands (version 8) */

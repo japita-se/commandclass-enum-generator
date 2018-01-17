@@ -21,19 +21,33 @@ using System.Xml;
 
 class Program
 {
+    // INSTRUCTIONS: set the following three values to the desired output language, the xml input filepath and the desired output directory
+    const OutputLanguage OUTPUT_LANGUAGE = OutputLanguage.JavaScript;
     const string XML_INPUT_FILE_PATH = "./input/ZWave_custom_cmd_classes.xml";
-    const string JAVASCRIPT_OUTPUT_FILE_PATH = "./output/zwave_command_classes.js";
+    // NOTE: the output directory is automatically purged, so be very careful when changing the output directory path (or disable the File.Delete functionality)
+    const string OUTPUT_DIRECTORY_PATH = "./output/";
+
+    //
+
+    private enum OutputLanguage 
+    {
+        Java,
+        JavaScript,
+    }
 
     static void Main(string[] args)
     {
         Console.WriteLine("Loading XML input file: " + XML_INPUT_FILE_PATH);
 
-        // create a list which will hold our class name/value enumeration pairs
-        SortedDictionary<string, byte> commandClassEnumPairs = new SortedDictionary<string, byte>();
-        // create a dictionary which will keep track of the latest version number of each command class enum
-        Dictionary<string, byte> commandClassesNewestVersionTracker = new Dictionary<string, byte>();
-        // create a sorted dictionary of command class enumerations
+        // create a list which will hold our command classes' name/value enumeration pairs
+        SortedDictionary<string, byte> commandClassEnumDictionary = new SortedDictionary<string, byte>();
+        // create a dictionary which will keep track of the latest version number of each command class enum (with the enum value as the key...to eliminate class "renaming" issues)
+        Dictionary<byte, byte> commandClassNewestVersionLookup = new Dictionary<byte, byte>();
+        //
+        // create a sorted dictionary of commands for each command class (storing only the entries for the latest command class version--which should be a superset of earlier versions)
         SortedDictionary<string, List<KeyValuePair<string, byte>>> commandClassEnumerations = new SortedDictionary<string, List<KeyValuePair<string, byte>>>();
+
+        /*** STEP 1 (FRONT END): READ COMMAND CLASSES AND THEIR COMMANDS FROM XML FILE ***/
 
         FileStream fileStream = null;
         try 
@@ -55,7 +69,7 @@ class Program
             {                    
                 while (reader.ReadToFollowing("cmd_class")) 
                 {
-                    // make sure we are at depth 1 (i.e. reading the correct "cmd_class" entries)
+                    // make sure we are at depth (level) 1 (i.e. reading the correct "cmd_class" entries)
                     if (reader.Depth != 1)
                     {
                         // invalid depth; skip this entry
@@ -81,7 +95,7 @@ class Program
                         // command class version missing; skip this entry
                         continue;
                     }
-                    // try to parse the enumValue/version
+                    // try to parse the command class's enumeration value and version
                     byte commandClassEnumValue;
                     byte commandClassVersion;
                     if (!byte.TryParse(commandClassEnumValueAsString.Substring(2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out commandClassEnumValue)) 
@@ -101,44 +115,96 @@ class Program
                         // command class name invalid; skip this entry
                         continue;
                     }
-                    // convert the command class name to an UpperCamelCase enumeration
-                    string commandClassEnumName = ConvertUpperCaseUnderscoreSeparatedToLowerCamelCase(commandClassShortName);
+                    // determine the command class name formatting: either as-is (in languages like Java with UPPER_CASE_CONSTANTS) or in special casing (for languages like JavaScript)
+                    string commandClassEnumName = null;
+                    switch (OUTPUT_LANGUAGE)
+                    {
+                        case OutputLanguage.Java:
+                            {
+                                // create a non-ambiguous reference variable for the shortened command class name
+                                commandClassEnumName = commandClassShortName;
+                                // verify that the shortened command name can be converted to UpperCamelCase (since this will be required during the source file writing phase)
+                                if (ConvertUpperCaseUnderscoreSeparatedToUpperCamelCase(commandClassShortName) == null)
+                                {
+                                    // command class name invalid; skip this entry
+                                    continue;
+                                }
+                            }
+                            break;
+                        case OutputLanguage.JavaScript:
+                            {
+                                // conver the shortened command class name to UpperCamelCase and store it in the "enum name" reference
+                                commandClassEnumName = ConvertUpperCaseUnderscoreSeparatedToUpperCamelCase(commandClassShortName);                                
+                            }
+                            break;
+                        default:
+                            throw new Exception("Output language not supported.");
+                    }
+                    //
                     if (commandClassEnumName == null) 
                     {
                         // command class name invalid; skip this entry
                         continue;
                     }
 
-                    // get the last version of the command class which was already added to our enumeration
+                    // get the newest already-stored version of the command class, if it was already added to our enumeration
                     // NOTE: we do this immediately before adding the command class and initial version to the list, so that we don't capture the just-added version
+                    // NOTE: we look up version #s based on the class's enum value--instead of the class's name--because command class names can change over time
                     byte? newestVersion = null;
-                    if (commandClassesNewestVersionTracker.ContainsKey(commandClassEnumName))
+                    if (commandClassNewestVersionLookup.ContainsKey(commandClassEnumValue))
                     {
-                        newestVersion = commandClassesNewestVersionTracker[commandClassEnumName];
+                        newestVersion = commandClassNewestVersionLookup[commandClassEnumValue];
                     }
                     //
-                    // if our command class has not already been added, add it to our command class enumeration now
-                    if (!commandClassEnumPairs.ContainsKey(commandClassEnumName))
+                    // if an earlier version of the command class already exists, remove it now
+                    if (newestVersion != null && newestVersion < commandClassVersion)
                     {
-                        commandClassEnumPairs.Add(commandClassEnumName, commandClassEnumValue);
-                        commandClassesNewestVersionTracker.Add(commandClassEnumName, commandClassVersion);
-                    }
-                    
-                    // now, create an enumeration for the command from the inner xml
-                    string commandClassCommandsEnumName = commandClassEnumName + "Command";
-                    List<KeyValuePair<string, byte>> commandEnumPairs = ParseXmlForCommandClassCommands(commandClassShortName, reader.ReadOuterXml());
-                    
-                    if (newestVersion == null || newestVersion < commandClassVersion)
-                    {
-                        // remove any old versions
-                        if (commandClassEnumerations.ContainsKey(commandClassEnumName))
+                        // find the class name of the previously-stored command class
+                        string oldCommandClassKey = null;
+                        //
+                        int commandClassKeysCount = commandClassEnumDictionary.Count;
+                        string[] commandClassKeys = new string[commandClassKeysCount];
+                        commandClassEnumDictionary.Keys.CopyTo(commandClassKeys, 0);
+                        //
+                        for(int iCommandClass = 0; iCommandClass < commandClassKeysCount; iCommandClass++)
                         {
-                            commandClassEnumerations.Remove(commandClassEnumName);
+                            if (commandClassEnumDictionary[commandClassKeys[iCommandClass]] == commandClassEnumValue)
+                            {
+                                oldCommandClassKey = commandClassKeys[iCommandClass];
+                            }
                         }
 
-                        // add the new enumeration values
+                        // remove the version of the previously-stored command class from our version lookup dictionary
+                        commandClassNewestVersionLookup.Remove(commandClassEnumValue);
+                        //
+                        // remove the older command class from the "command class enum" dictionary
+                        if (commandClassEnumDictionary.ContainsKey(oldCommandClassKey)) 
+                        {
+                            commandClassEnumDictionary.Remove(oldCommandClassKey);
+                        }
+                        //
+                        // remove the older command class from the "command enums for each command class" dictionary
+                        if (commandClassEnumerations.ContainsKey(oldCommandClassKey)) 
+                        {
+                            commandClassEnumerations.Remove(oldCommandClassKey);
+                        }
+                    }
+
+                    // if our current data is either a new command class or a newer version of an already-stored command class, add it now
+                    if (newestVersion == null || newestVersion < commandClassVersion)
+                    {
+                        // add the command class to our "command class enum"
+                        commandClassEnumDictionary.Add(commandClassEnumName, commandClassEnumValue);
+                        //
+                        // and also add the corresponding version lookup entry
+                        commandClassNewestVersionLookup.Add(commandClassEnumValue, commandClassVersion);
+                        
+                        // now, create an enumeration for the command class's commands (derived from the command class xml node's inner xml)
+                        string commandClassCommandsEnumName = commandClassEnumName + "Command";
+                        List<KeyValuePair<string, byte>> commandEnumPairs = ParseXmlForCommandClassCommands(commandClassShortName, reader.ReadOuterXml(), OUTPUT_LANGUAGE);
+                        
+                        // add the command class's command enumeration values
                         commandClassEnumerations.Add(commandClassEnumName, commandEnumPairs);
-                        commandClassesNewestVersionTracker[commandClassEnumName] = commandClassVersion;
                     }
                 }
             }
@@ -154,94 +220,32 @@ class Program
             fileStream.Dispose();
         }
 
-        Console.WriteLine("Writing JavaScript output file: " + JAVASCRIPT_OUTPUT_FILE_PATH);
+        /*** STEP 2 (BACK END): WRITE COMMAND CLASSES AND COMMANDS AS ENUMERATIONS TO SOURCE FILES ***/
 
-        fileStream = null;
-        try 
+        // clear out the output directory
+        foreach(var fileToDelete in Directory.EnumerateFiles(OUTPUT_DIRECTORY_PATH))
         {
-            fileStream = new FileStream(JAVASCRIPT_OUTPUT_FILE_PATH, FileMode.Create);
-        }
-        catch(Exception ex)
-        {
-            Console.WriteLine("Could not open file: " + JAVASCRIPT_OUTPUT_FILE_PATH);
-            Console.WriteLine("exception: " + ex.Message);
-            return;
+            Console.WriteLine("Deleting old output file: " + fileToDelete);
+            File.Delete(fileToDelete);
         }
 
-        try
+        // generate the new output files
+        switch (OUTPUT_LANGUAGE)
         {
-            StreamWriter writer = new StreamWriter(fileStream);
-
-            try     
-            {
-                // build and output the command class enumeration
-                writer.WriteLine("/* Z-Wave command classes */");
-                writer.WriteLine("let CommandClass = Object.freeze({");
-                // add each command class (standard lookup)
-                foreach (KeyValuePair<string, byte> enumPair in commandClassEnumPairs) 
-                {
-                    writer.WriteLine("    " + enumPair.Key + ": 0x" + enumPair.Value.ToString("x2") + ",");
-                }
-                // add each command class (reverse lookup)
-                writer.WriteLine("    properties: {");
-                foreach (KeyValuePair<string, byte> enumPair in commandClassEnumPairs) 
-                {
-                    writer.WriteLine("        0x" + enumPair.Value.ToString("x2") + ": {name: \"" + enumPair.Key + "\"},");
-                }                
-                writer.WriteLine("    }");
-                //
-                writer.WriteLine("});");
-                writer.WriteLine("exports.CommandClass = CommandClass;");
-                writer.WriteLine("let isCommandClassValid = function(commandClass) {");
-                writer.WriteLine("    return (this.CommandClass.properties[commandClass] !== undefined);");
-                writer.WriteLine("}");
-                writer.WriteLine("");
-
-                // build and output each command class's command enumeration
-                foreach (var commandClassCommands in commandClassEnumerations)
-                {
-                    string commandClassEnumName = commandClassCommands.Key;
-                    var commandEnumPairs = commandClassCommands.Value;
-
-                    // build the command enumeration for this command class
-                    writer.WriteLine("/* " + commandClassEnumName + " commands (version " + commandClassesNewestVersionTracker[commandClassEnumName] + ") */");
-                    writer.WriteLine("let " + commandClassEnumName + "Command = Object.freeze({");
-                    // add each command (standard lookup)
-                    foreach (KeyValuePair<string, byte> enumPair in commandEnumPairs) 
-                    {
-                        writer.WriteLine("    " + enumPair.Key + ": 0x" + enumPair.Value.ToString("x2") + ",");
-                    }
-                    // add each command (reverse lookup)
-                    writer.WriteLine("    properties: {");
-                    foreach (KeyValuePair<string, byte> enumPair in commandEnumPairs) 
-                    {
-                        writer.WriteLine("        0x" + enumPair.Value.ToString("x2") + ": {name: \"" + enumPair.Key + "\"},");
-                    }                
-                    writer.WriteLine("    }");
-                    //
-                    writer.WriteLine("});");
-                    writer.WriteLine("exports." + commandClassEnumName + "Command = " + commandClassEnumName + "Command;");
-                    writer.WriteLine("let is" + commandClassEnumName + "CommandValid = function(command) {");
-                    writer.WriteLine("    return (this." + commandClassEnumName + "Command.properties[command] !== undefined);");
-                    writer.WriteLine("}");
-                    writer.WriteLine("");
-                }
-            }
-            finally
-            {
-                writer.Dispose();
-            }
-
-            Console.WriteLine("Done writing output file.");
+            case OutputLanguage.Java:
+                // generate Java enum source files
+                GenerateJavaEnumFiles(OUTPUT_DIRECTORY_PATH, commandClassEnumDictionary, commandClassEnumerations, commandClassNewestVersionLookup);
+                break;
+            case OutputLanguage.JavaScript:
+                // generate JavaScript enum source files
+                GenerateJavaScriptEnumFiles(OUTPUT_DIRECTORY_PATH, commandClassEnumDictionary, commandClassEnumerations, commandClassNewestVersionLookup);
+                break;
+            default:
+                throw new NotSupportedException();
         }
-        finally
-        {
-            fileStream.Dispose();
-        }
-
     }
 
-    private static List<KeyValuePair<string, byte>> ParseXmlForCommandClassCommands(string shortCommandClassName, string xml) 
+    private static List<KeyValuePair<string, byte>> ParseXmlForCommandClassCommands(string shortCommandClassName, string xml, OutputLanguage outputLanguage) 
     {
         List<KeyValuePair<string, byte>> commandEnumPairs = new List<KeyValuePair<string, byte>>();
 
@@ -276,20 +280,38 @@ class Program
                 // enum value (command number) invalid; skip this entry
                 continue;
             }
-            // get the short 
+            // get the short command name
             string shortCommandName = ExtractShortCommandNameFromLongCommandName(shortCommandClassName, commandName);
             if (shortCommandName == null)
             {
                 // if the commandName could not be reduced in size, we will ignore the command header
                 shortCommandName = commandName;
             }
-            // convert the command name to an upperCamelCase enumeration
-            string commandEnumName = ConvertUpperCaseUnderscoreSeparatedToLowerCamelCase(shortCommandName);
-            if (commandName == null) 
+            // store the command class name as-is (in languages like Java with UPPER_CASE_CONSTANTS) or convert it to special casing (for languages like JavaScript)
+            string commandEnumName = null;
+            switch(outputLanguage)
+            {
+                case OutputLanguage.Java:
+                    {
+                        // store the short command name as-is
+                        commandEnumName = shortCommandName;
+                    }
+                    break;
+                case OutputLanguage.JavaScript:
+                    {
+                        // convert the command name to a UpperCamelCase enumeration
+                        commandEnumName = ConvertUpperCaseUnderscoreSeparatedToUpperCamelCase(shortCommandName);
+                    }
+                    break;
+                default:
+                    throw new ArgumentException("Output language is not supported.", nameof(outputLanguage));
+            }
+            //
+            if (commandEnumName == null) 
             {
                 // command name invalid; skip this entry
                 continue;
-            }
+            }                        
 
             // add this command to our list
             commandEnumPairs.Add(new KeyValuePair<string, byte>(commandEnumName, commandEnumValue));
@@ -326,8 +348,20 @@ class Program
 
     private static string ConvertUpperCaseUnderscoreSeparatedToLowerCamelCase(string name)
     {
-        // convert name to UpperCamelCase
-        bool useUpperCase = true;
+        return ConvertUpperCaseUnderscoreSeparatedToCamelCase(name, false);
+    }
+
+    private static string ConvertUpperCaseUnderscoreSeparatedToUpperCamelCase(string name)
+    {
+        return ConvertUpperCaseUnderscoreSeparatedToCamelCase(name, true);
+    }
+
+    private static string ConvertUpperCaseUnderscoreSeparatedToCamelCase(string name, bool capitalizeFirstLetter)
+    {
+        // if the user has requested UpperCamelCase (capitalizeFirstLetter = true), set our useUpperCase flag to capitilize the first letter
+        bool useUpperCase = capitalizeFirstLetter;
+
+        // convert name to lowerCamelCase/UpperCamelCase
         StringBuilder resultBuilder = new StringBuilder();
         for (Int32 offset = 0; offset < name.Length; offset++)
         {
@@ -356,4 +390,380 @@ class Program
         return resultBuilder.ToString();
     }
 
+    private static void GenerateJavaEnumFiles(
+        string directoryPath, 
+        SortedDictionary<string, byte> commandClassEnumDictionary, 
+        SortedDictionary<string, List<KeyValuePair<string, byte>>> commandClassEnumerations,
+        Dictionary<byte, byte> commandClassVersionLookup)
+    {
+        const string JAVA_OUTPUT_PACKAGE_NAME = "com.zwavepublic.zwaveip.commands";
+
+        // create the main CommandClass.java enumeration file
+        String outputFilePath;
+        outputFilePath = directoryPath + "CommandClass.java";
+
+        Console.WriteLine("Writing Java output file: " + outputFilePath);
+
+        FileStream fileStream = null;
+        try 
+        {
+            fileStream = new FileStream(outputFilePath, FileMode.Create);
+        }
+        catch(Exception ex)
+        {
+            Console.WriteLine("Could not open file: " + outputFilePath);
+            Console.WriteLine("exception: " + ex.Message);
+            return;
+        }
+
+        try
+        {
+            StreamWriter writer = new StreamWriter(fileStream);
+
+            try     
+            {
+                // build and output the command class enumeration
+                writer.WriteLine("package " + JAVA_OUTPUT_PACKAGE_NAME + ";");
+                writer.WriteLine("");
+                writer.WriteLine("import java.util.HashMap;");
+                writer.WriteLine("");
+                writer.WriteLine("/* Z-Wave command classes */");
+                writer.WriteLine("public enum CommandClass {");
+                // add each command class (standard lookup)
+                int commandClassKeysCount = commandClassEnumDictionary.Count;
+                string[] commandClassKeys = new string[commandClassKeysCount];
+                commandClassEnumDictionary.Keys.CopyTo(commandClassKeys, 0);
+                for (int iKey = 0; iKey < commandClassKeysCount; iKey += 1)
+                {
+                    string key = commandClassKeys[iKey];
+                    byte value;
+                    if (commandClassEnumDictionary.TryGetValue(key, out value) == false)
+                    {
+                        throw new InvalidProgramException();
+                    }
+                    //
+                    writer.Write("    " + key + "(0x" + value.ToString("x2") + ")");
+                    if (iKey < commandClassKeysCount - 1) 
+                    {
+                        writer.WriteLine(",");
+                    }
+                    else
+                    {
+                        writer.WriteLine(";");
+                    }
+                }
+                // add internal class-scope plumbing for reverse lookup
+                writer.WriteLine("");
+                writer.WriteLine("    private static final HashMap<Integer, CommandClass> _map = new HashMap<Integer, CommandClass>();");
+                writer.WriteLine("    static {");
+                writer.WriteLine("        for (CommandClass value: CommandClass.values()) {");
+                writer.WriteLine("            _map.put(value.intValue(), value);");
+                writer.WriteLine("        }");
+                writer.WriteLine("    }");
+                // add internal plumbing for storing and returning the integer value of each enumeration constant
+                writer.WriteLine("");
+                writer.WriteLine("    private int _intValue;");
+                writer.WriteLine("");
+                writer.WriteLine("    private CommandClass(int value) {");
+                writer.WriteLine("        this._intValue = value;");
+                writer.WriteLine("    }");
+                writer.WriteLine("");
+                writer.WriteLine("    public int intValue() {");
+                writer.WriteLine("        return this._intValue;");
+                writer.WriteLine("    }");
+                // add reverse lookup (for both the standard exception-throwing lookup and a null-returning "IfPresent" variant)
+                writer.WriteLine("");
+                writer.WriteLine("    public static CommandClass valueOf(int intValue) {");
+                writer.WriteLine("        CommandClass result = _map.get(intValue);");
+                writer.WriteLine("        if(result == null) {");
+                writer.WriteLine("            throw new IllegalArgumentException();");
+                writer.WriteLine("        } else {");
+                writer.WriteLine("            return result;");
+                writer.WriteLine("        }");
+                writer.WriteLine("    }");
+                writer.WriteLine("");
+                writer.WriteLine("    public static CommandClass valueOfIfPresent(int intValue) {");
+                writer.WriteLine("        return _map.get(intValue);");
+                writer.WriteLine("    }");
+                //
+                writer.WriteLine("}");
+                writer.WriteLine("");
+            }
+            finally
+            {
+                writer.Dispose();
+            }
+
+            Console.WriteLine("Done writing output file: " + outputFilePath);
+        }
+        finally
+        {
+            fileStream.Dispose();
+        }
+
+        // build the "Command" interface which our command classes will implement; this interface provides the developer with better type and command range safety 
+        outputFilePath = directoryPath + "Command.java";
+
+        Console.WriteLine("Writing Java output file: " + outputFilePath);
+
+        fileStream = null;
+        try 
+        {
+            fileStream = new FileStream(outputFilePath, FileMode.Create);
+        }
+        catch(Exception ex)
+        {
+            Console.WriteLine("Could not open file: " + outputFilePath);
+            Console.WriteLine("exception: " + ex.Message);
+            return;
+        }
+
+        try
+        {
+            StreamWriter writer = new StreamWriter(fileStream);
+
+            try     
+            {
+                // build and output the command class enumeration
+                writer.WriteLine("package " + JAVA_OUTPUT_PACKAGE_NAME + ";");
+                writer.WriteLine("");
+                writer.WriteLine("/* Interface for Z-Wave command enumerations */");
+                writer.WriteLine("public interface Command {");
+                writer.WriteLine("    public int intValue();");
+                writer.WriteLine("}");
+                writer.WriteLine("");
+            }
+            finally
+            {
+                writer.Dispose();
+            }
+
+            Console.WriteLine("Done writing output file: " + outputFilePath);
+        }
+        finally
+        {
+            fileStream.Dispose();
+        }
+
+        // build and output each command class's command enumeration
+        foreach (var commandClassCommands in commandClassEnumerations)
+        {
+            string commandClassEnumName = commandClassCommands.Key;
+            string commandClassEnumNameInUpperCamelCase = ConvertUpperCaseUnderscoreSeparatedToUpperCamelCase(commandClassEnumName);
+            var commandEnumPairs = commandClassCommands.Value;
+
+            byte commentClassVersion;
+            if (commandClassEnumDictionary.TryGetValue(commandClassEnumName, out commentClassVersion) == false)
+            {
+                throw new InvalidProgramException();
+            }
+
+            // if this command class has no commands, it should have no enum: skip it.
+            if(commandEnumPairs.Count == 0) {
+                continue;
+            }
+
+            outputFilePath = directoryPath + commandClassEnumNameInUpperCamelCase + "Command.java";
+
+            Console.WriteLine("Writing Java output file: " + outputFilePath);
+
+            fileStream = null;
+            try 
+            {
+                fileStream = new FileStream(outputFilePath, FileMode.Create);
+            }
+            catch(Exception ex)
+            {
+                Console.WriteLine("Could not open file: " + outputFilePath);
+                Console.WriteLine("exception: " + ex.Message);
+                return;
+            }
+
+            try
+            {
+                StreamWriter writer = new StreamWriter(fileStream);
+
+                try     
+                {
+                    byte commandClassEnumValue = commandClassEnumDictionary[commandClassEnumName];
+
+                    // build the command enumeration for this command class
+                    writer.WriteLine("package " + JAVA_OUTPUT_PACKAGE_NAME + ";");
+                    writer.WriteLine("");
+                    writer.WriteLine("import java.util.HashMap;");
+                    writer.WriteLine("");
+                    writer.WriteLine("/* " + commandClassEnumNameInUpperCamelCase + " commands (version " + commandClassVersionLookup[commandClassEnumValue] + ") */");
+                    writer.WriteLine("public enum " + commandClassEnumNameInUpperCamelCase + "Command implements com.zwavepublic.zwaveip.commands.Command {");
+                    // add each command (standard lookup)
+                    int commandCount = commandEnumPairs.Count;
+                    for (int iKey = 0; iKey < commandCount; iKey += 1)
+                    {
+                        string key = commandEnumPairs[iKey].Key;
+                        byte value = commandEnumPairs[iKey].Value;
+                        //
+                        writer.Write("    " + key + "(0x" + value.ToString("x2") + ")");
+                        if (iKey < commandCount - 1) 
+                        {
+                            writer.WriteLine(",");
+                        }
+                        else
+                        {
+                            writer.WriteLine(";");
+                        }
+                    }
+                    // add internal class-scope plumbing for reverse lookup
+                    writer.WriteLine("");
+                    writer.WriteLine("    private static final HashMap<Integer, " + commandClassEnumNameInUpperCamelCase + "Command> _map = new HashMap<Integer, " + commandClassEnumNameInUpperCamelCase + "Command>(" + commandCount.ToString() + ");");
+                    writer.WriteLine("    static {");
+                    writer.WriteLine("        for (" + commandClassEnumNameInUpperCamelCase + "Command value: " + commandClassEnumNameInUpperCamelCase + "Command.values()) {");
+                    writer.WriteLine("            _map.put(value.intValue(), value);");
+                    writer.WriteLine("        }");
+                    writer.WriteLine("    }");
+                    // add internal plumbing for storing and returning the integer value of each enumeration constant
+                    writer.WriteLine("");
+                    writer.WriteLine("    private int _intValue;");
+                    writer.WriteLine("");
+                    writer.WriteLine("    private " + commandClassEnumNameInUpperCamelCase + "Command(int value) {");
+                    writer.WriteLine("        this._intValue = value;");
+                    writer.WriteLine("    }");
+                    // add override(s) for Command interface
+                    writer.WriteLine("");
+                    writer.WriteLine("    @Override");
+                    writer.WriteLine("    public int intValue() {");
+                    writer.WriteLine("        return this._intValue;");
+                    writer.WriteLine("    }");
+                    // add reverse lookup
+                    writer.WriteLine("");
+                    writer.WriteLine("    public static " + commandClassEnumNameInUpperCamelCase + "Command valueOf(int intValue) {");
+                    writer.WriteLine("        " + commandClassEnumNameInUpperCamelCase + "Command result = _map.get(intValue);");
+                    writer.WriteLine("        if(result == null) {");
+                    writer.WriteLine("            throw new IllegalArgumentException();");
+                    writer.WriteLine("        } else {");
+                    writer.WriteLine("            return result;");
+                    writer.WriteLine("        }");
+                    writer.WriteLine("    }");
+                    writer.WriteLine("");
+                    writer.WriteLine("    public static " + commandClassEnumNameInUpperCamelCase + "Command valueOfIfPresent(int intValue) {");
+                    writer.WriteLine("        return _map.get(intValue);");
+                    writer.WriteLine("    }");
+                    //
+                    writer.WriteLine("}");
+                    writer.WriteLine("");
+                }
+                finally
+                {
+                    writer.Dispose();
+                }
+
+                Console.WriteLine("Done writing output file: " + outputFilePath);
+            }
+            finally
+            {
+                fileStream.Dispose();
+            }
+        }
+    }
+
+    private static void GenerateJavaScriptEnumFiles(
+        string directoryPath, 
+        SortedDictionary<string, byte> commandClassEnumDictionary, 
+        SortedDictionary<string, List<KeyValuePair<string, byte>>> commandClassEnumerations,
+        Dictionary<byte, byte> commandClassVersionLookup)
+    {
+        const string JAVASCRIPT_OUTPUT_FILE_NAME = "zwave_command_classes.js";                    
+
+        String outputFilePath;
+        outputFilePath = directoryPath + JAVASCRIPT_OUTPUT_FILE_NAME;
+
+        Console.WriteLine("Writing JavaScript output file: " + outputFilePath);
+
+        FileStream fileStream = null;
+        try 
+        {
+            fileStream = new FileStream(outputFilePath, FileMode.Create);
+        }
+        catch(Exception ex)
+        {
+            Console.WriteLine("Could not open file: " + outputFilePath);
+            Console.WriteLine("exception: " + ex.Message);
+            return;
+        }
+
+        try
+        {
+            StreamWriter writer = new StreamWriter(fileStream);
+
+            try     
+            {
+                // build and output the command class enumeration
+                writer.WriteLine("/* Z-Wave command classes */");
+                writer.WriteLine("let CommandClass = Object.freeze({");
+                // add each command class (standard lookup)
+                foreach (KeyValuePair<string, byte> enumPair in commandClassEnumDictionary) 
+                {
+                    writer.WriteLine("    " + enumPair.Key + ": 0x" + enumPair.Value.ToString("x2") + ",");
+                }
+                // add each command class (reverse lookup)
+                writer.WriteLine("    properties: {");
+                foreach (KeyValuePair<string, byte> enumPair in commandClassEnumDictionary) 
+                {
+                    writer.WriteLine("        0x" + enumPair.Value.ToString("x2") + ": {name: \"" + enumPair.Key + "\"},");
+                }                
+                writer.WriteLine("    }");
+                //
+                writer.WriteLine("});");
+                writer.WriteLine("exports.CommandClass = CommandClass;");
+                writer.WriteLine("let isCommandClassValid = function(commandClass) {");
+                writer.WriteLine("    return (this.CommandClass.properties[commandClass] !== undefined);");
+                writer.WriteLine("}");
+                writer.WriteLine("");
+
+                // build and output each command class's command enumeration
+                foreach (var commandClassCommands in commandClassEnumerations)
+                {
+                    string commandClassEnumName = commandClassCommands.Key;
+                    byte commandClassEnumValue = commandClassEnumDictionary[commandClassEnumName];
+                    var commandEnumPairs = commandClassCommands.Value;
+
+                    // if this command class has no commands, it should have no enum: skip it.
+                    if(commandEnumPairs.Count == 0) {
+                        continue;
+                    }
+
+                    // build the command enumeration for this command class
+                    writer.WriteLine("/* " + commandClassEnumName + " commands (version " + commandClassVersionLookup[commandClassEnumValue] + ") */");
+                    writer.WriteLine("let " + commandClassEnumName + "Command = Object.freeze({");
+                    // add each command (standard lookup)
+                    foreach (KeyValuePair<string, byte> enumPair in commandEnumPairs) 
+                    {
+                        writer.WriteLine("    " + enumPair.Key + ": 0x" + enumPair.Value.ToString("x2") + ",");
+                    }
+                    // add each command (reverse lookup)
+                    writer.WriteLine("    properties: {");
+                    foreach (KeyValuePair<string, byte> enumPair in commandEnumPairs) 
+                    {
+                        writer.WriteLine("        0x" + enumPair.Value.ToString("x2") + ": {name: \"" + enumPair.Key + "\"},");
+                    }                
+                    writer.WriteLine("    }");
+                    //
+                    writer.WriteLine("});");
+                    writer.WriteLine("exports." + commandClassEnumName + "Command = " + commandClassEnumName + "Command;");
+                    writer.WriteLine("let is" + commandClassEnumName + "CommandValid = function(command) {");
+                    writer.WriteLine("    return (this." + commandClassEnumName + "Command.properties[command] !== undefined);");
+                    writer.WriteLine("}");
+                    writer.WriteLine("");
+                }
+            }
+            finally
+            {
+                writer.Dispose();
+            }
+
+            Console.WriteLine("Done writing output file.");
+        }
+        finally
+        {
+            fileStream.Dispose();
+        }
+    }
 }
