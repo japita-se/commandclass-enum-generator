@@ -396,7 +396,7 @@ class Program
         SortedDictionary<string, List<KeyValuePair<string, byte>>> commandClassEnumerations,
         Dictionary<byte, byte> commandClassVersionLookup)
     {
-        const string JAVA_OUTPUT_PACKAGE_NAME = "com.zwavepublic.zwaveip.commands";
+        const string JAVA_OUTPUT_PACKAGE_NAME = "com.zwavepublic.zwaveip.command";
 
         // create the main CommandClass.java enumeration file
         String outputFilePath;
@@ -442,7 +442,7 @@ class Program
                         throw new InvalidProgramException();
                     }
                     //
-                    writer.Write("    " + key + "(0x" + value.ToString("x2") + ")");
+                    writer.Write("    " + key + "((byte)0x" + value.ToString("x2") + ")");
                     if (iKey < commandClassKeysCount - 1) 
                     {
                         writer.WriteLine(",");
@@ -454,27 +454,27 @@ class Program
                 }
                 // add internal class-scope plumbing for reverse lookup
                 writer.WriteLine("");
-                writer.WriteLine("    private static final HashMap<Integer, CommandClass> _map = new HashMap<Integer, CommandClass>();");
+                writer.WriteLine("    private static final HashMap<Byte, CommandClass> _map = new HashMap<Byte, CommandClass>();");
                 writer.WriteLine("    static {");
                 writer.WriteLine("        for (CommandClass value: CommandClass.values()) {");
-                writer.WriteLine("            _map.put(value.intValue(), value);");
+                writer.WriteLine("            _map.put(value.byteValue(), value);");
                 writer.WriteLine("        }");
                 writer.WriteLine("    }");
-                // add internal plumbing for storing and returning the integer value of each enumeration constant
+                // add internal plumbing for storing and returning the byte value of each enumeration constant
                 writer.WriteLine("");
-                writer.WriteLine("    private int _intValue;");
+                writer.WriteLine("    private byte _byteValue;");
                 writer.WriteLine("");
-                writer.WriteLine("    private CommandClass(int value) {");
-                writer.WriteLine("        this._intValue = value;");
+                writer.WriteLine("    private CommandClass(byte value) {");
+                writer.WriteLine("        this._byteValue = value;");
                 writer.WriteLine("    }");
                 writer.WriteLine("");
-                writer.WriteLine("    public int intValue() {");
-                writer.WriteLine("        return this._intValue;");
+                writer.WriteLine("    public byte byteValue() {");
+                writer.WriteLine("        return this._byteValue;");
                 writer.WriteLine("    }");
                 // add reverse lookup (for both the standard exception-throwing lookup and a null-returning "IfPresent" variant)
                 writer.WriteLine("");
-                writer.WriteLine("    public static CommandClass valueOf(int intValue) {");
-                writer.WriteLine("        CommandClass result = _map.get(intValue);");
+                writer.WriteLine("    public static CommandClass valueOf(byte byteValue) {");
+                writer.WriteLine("        CommandClass result = _map.get(byteValue);");
                 writer.WriteLine("        if(result == null) {");
                 writer.WriteLine("            throw new IllegalArgumentException();");
                 writer.WriteLine("        } else {");
@@ -482,8 +482,8 @@ class Program
                 writer.WriteLine("        }");
                 writer.WriteLine("    }");
                 writer.WriteLine("");
-                writer.WriteLine("    public static CommandClass valueOfIfPresent(int intValue) {");
-                writer.WriteLine("        return _map.get(intValue);");
+                writer.WriteLine("    public static CommandClass valueOfIfPresent(byte byteValue) {");
+                writer.WriteLine("        return _map.get(byteValue);");
                 writer.WriteLine("    }");
                 //
                 writer.WriteLine("}");
@@ -529,7 +529,7 @@ class Program
                 writer.WriteLine("");
                 writer.WriteLine("/* Interface for Z-Wave command enumerations */");
                 writer.WriteLine("public interface Command {");
-                writer.WriteLine("    public int intValue();");
+                writer.WriteLine("    public byte byteValue();");
                 writer.WriteLine("}");
                 writer.WriteLine("");
             }
@@ -593,7 +593,7 @@ class Program
                     writer.WriteLine("import java.util.HashMap;");
                     writer.WriteLine("");
                     writer.WriteLine("/* " + commandClassEnumNameInUpperCamelCase + " commands (version " + commandClassVersionLookup[commandClassEnumValue] + ") */");
-                    writer.WriteLine("public enum " + commandClassEnumNameInUpperCamelCase + "Command implements com.zwavepublic.zwaveip.commands.Command {");
+                    writer.WriteLine("public enum " + commandClassEnumNameInUpperCamelCase + "Command implements Command {");
                     // add each command (standard lookup)
                     int commandCount = commandEnumPairs.Count;
                     for (int iKey = 0; iKey < commandCount; iKey += 1)
@@ -601,7 +601,7 @@ class Program
                         string key = commandEnumPairs[iKey].Key;
                         byte value = commandEnumPairs[iKey].Value;
                         //
-                        writer.Write("    " + key + "(0x" + value.ToString("x2") + ")");
+                        writer.Write("    " + key + "((byte)0x" + value.ToString("x2") + ")");
                         if (iKey < commandCount - 1) 
                         {
                             writer.WriteLine(",");
@@ -613,29 +613,29 @@ class Program
                     }
                     // add internal class-scope plumbing for reverse lookup
                     writer.WriteLine("");
-                    writer.WriteLine("    private static final HashMap<Integer, " + commandClassEnumNameInUpperCamelCase + "Command> _map = new HashMap<Integer, " + commandClassEnumNameInUpperCamelCase + "Command>(" + commandCount.ToString() + ");");
+                    writer.WriteLine("    private static final HashMap<Byte, " + commandClassEnumNameInUpperCamelCase + "Command> _map = new HashMap<Byte, " + commandClassEnumNameInUpperCamelCase + "Command>(" + commandCount.ToString() + ");");
                     writer.WriteLine("    static {");
                     writer.WriteLine("        for (" + commandClassEnumNameInUpperCamelCase + "Command value: " + commandClassEnumNameInUpperCamelCase + "Command.values()) {");
-                    writer.WriteLine("            _map.put(value.intValue(), value);");
+                    writer.WriteLine("            _map.put(value.byteValue(), value);");
                     writer.WriteLine("        }");
                     writer.WriteLine("    }");
-                    // add internal plumbing for storing and returning the integer value of each enumeration constant
+                    // add internal plumbing for storing and returning the byte value of each enumeration constant
                     writer.WriteLine("");
-                    writer.WriteLine("    private int _intValue;");
+                    writer.WriteLine("    private byte _byteValue;");
                     writer.WriteLine("");
-                    writer.WriteLine("    private " + commandClassEnumNameInUpperCamelCase + "Command(int value) {");
-                    writer.WriteLine("        this._intValue = value;");
+                    writer.WriteLine("    private " + commandClassEnumNameInUpperCamelCase + "Command(byte value) {");
+                    writer.WriteLine("        this._byteValue = value;");
                     writer.WriteLine("    }");
                     // add override(s) for Command interface
                     writer.WriteLine("");
                     writer.WriteLine("    @Override");
-                    writer.WriteLine("    public int intValue() {");
-                    writer.WriteLine("        return this._intValue;");
+                    writer.WriteLine("    public byte byteValue() {");
+                    writer.WriteLine("        return this._byteValue;");
                     writer.WriteLine("    }");
                     // add reverse lookup
                     writer.WriteLine("");
-                    writer.WriteLine("    public static " + commandClassEnumNameInUpperCamelCase + "Command valueOf(int intValue) {");
-                    writer.WriteLine("        " + commandClassEnumNameInUpperCamelCase + "Command result = _map.get(intValue);");
+                    writer.WriteLine("    public static " + commandClassEnumNameInUpperCamelCase + "Command valueOf(byte byteValue) {");
+                    writer.WriteLine("        " + commandClassEnumNameInUpperCamelCase + "Command result = _map.get(byteValue);");
                     writer.WriteLine("        if(result == null) {");
                     writer.WriteLine("            throw new IllegalArgumentException();");
                     writer.WriteLine("        } else {");
@@ -643,8 +643,8 @@ class Program
                     writer.WriteLine("        }");
                     writer.WriteLine("    }");
                     writer.WriteLine("");
-                    writer.WriteLine("    public static " + commandClassEnumNameInUpperCamelCase + "Command valueOfIfPresent(int intValue) {");
-                    writer.WriteLine("        return _map.get(intValue);");
+                    writer.WriteLine("    public static " + commandClassEnumNameInUpperCamelCase + "Command valueOfIfPresent(byte byteValue) {");
+                    writer.WriteLine("        return _map.get(byteValue);");
                     writer.WriteLine("    }");
                     //
                     writer.WriteLine("}");
